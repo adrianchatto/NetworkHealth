@@ -1,0 +1,85 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UniFi Network Monitor stack
+#
+# What this adds to your existing Docker server:
+#   • influxdb   — time-series database for the collected metrics
+#   • collector  — Python daemon, polls UniFi every 5 min, writes to InfluxDB
+#
+# If you already have Grafana running, skip that service and just point
+# your existing Grafana instance at InfluxDB (http://influxdb:8086).
+# If you need a fresh Grafana, uncomment the grafana block at the bottom.
+#
+# Setup:
+#   1. Copy .env.template → .env and fill in your values
+#   2. docker compose up -d
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── InfluxDB v2 ──────────────────────────────────────────────────────────────
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+      - influxdb_config:/etc/influxdb2
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE:         setup
+      DOCKER_INFLUXDB_INIT_USERNAME:     admin
+      DOCKER_INFLUXDB_INIT_PASSWORD:     NetworkHealth2024!
+      DOCKER_INFLUXDB_INIT_ORG:          home
+      DOCKER_INFLUXDB_INIT_BUCKET:       unifi
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN:  networkhealth-influx-token-2024
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --tries=1 --spider http://localhost:8086/ping && exit 0 || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  # ── UniFi collector ───────────────────────────────────────────────────────────
+  collector:
+    build: ./collector
+    container_name: unifi-collector
+    restart: unless-stopped
+    depends_on:
+      - influxdb   # collector retries on startup — no health gate needed
+    network_mode: host        # needs to reach 192.168.1.1 on your LAN
+    environment:
+      UNIFI_HOST:             ${UNIFI_HOST:-https://192.168.1.1}
+      UNIFI_USER:             ${UNIFI_USER}
+      UNIFI_PASS:             ${UNIFI_PASS}
+      UNIFI_SITE:             ${UNIFI_SITE:-default}
+      UNIFI_VERIFY_SSL:       ${UNIFI_VERIFY_SSL:-false}
+      INFLUX_URL:             http://localhost:8086   # host network → same host
+      INFLUX_TOKEN:           networkhealth-influx-token-2024
+      INFLUX_ORG:             home
+      INFLUX_BUCKET:          unifi
+      POLL_INTERVAL_SECONDS:  300
+
+  # ── Grafana (optional — uncomment if you need a fresh instance) ───────────────
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: grafana
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #     - ./grafana/provisioning:/etc/grafana/provisioning
+  #   environment:
+  #     GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+  #     GF_USERS_ALLOW_SIGN_UP:     "false"
+  #   depends_on:
+  #     influxdb:
+  #       condition: service_healthy
+
+volumes:
+  influxdb_data:
+  influxdb_config:
+  # grafana_data:

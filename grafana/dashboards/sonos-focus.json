@@ -1,0 +1,247 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_INFLUXDB",
+      "label": "InfluxDB-UniFi",
+      "description": "InfluxDB v2 Flux data source",
+      "type": "datasource",
+      "pluginId": "influxdb",
+      "pluginName": "InfluxDB"
+    }
+  ],
+  "__requires": [
+    { "type": "datasource", "id": "influxdb", "name": "InfluxDB", "version": "1.0.0" },
+    { "type": "grafana",    "id": "grafana",  "name": "Grafana",  "version": "9.0.0" }
+  ],
+  "id": null,
+  "uid": "unifi-sonos-focus",
+  "title": "UniFi — Sonos & Kitchen WiFi",
+  "tags": ["unifi", "sonos", "network"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "5m",
+  "time": { "from": "now-7d", "to": "now" },
+  "timepicker": {},
+  "description": "Focused view on Sonos device signal quality, dropout correlation with guest activity, and kitchen-area AP health.",
+  "panels": [
+
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Sonos RSSI (now)",
+      "description": "Signal strength at the Sonos device. Below -75 dBm is problematic.",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dBm",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{"color":"red","value":null},{"color":"yellow","value":-75},{"color":"green","value":-65}] }
+        }
+      },
+      "targets": [{
+        "refId": "A",
+        "query": "from(bucket: \"unifi\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"wifi_client\" and r._field == \"rssi\" and r.is_sonos == \"true\")\n  |> last()"
+      }]
+    },
+
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Sonos SNR (now)",
+      "description": "Signal-to-noise ratio. Below 20 dB causes dropouts.",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dB",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{"color":"red","value":null},{"color":"yellow","value":20},{"color":"green","value":30}] }
+        }
+      },
+      "targets": [{
+        "refId": "A",
+        "query": "from(bucket: \"unifi\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"wifi_client\" and r._field == \"snr\" and r.is_sonos == \"true\")\n  |> last()"
+      }]
+    },
+
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Sonos Satisfaction Score",
+      "description": "UniFi's own per-client health score (0-100). Under 60 = poor experience.",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{"color":"red","value":null},{"color":"yellow","value":60},{"color":"green","value":80}] }
+        }
+      },
+      "targets": [{
+        "refId": "A",
+        "query": "from(bucket: \"unifi\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"wifi_client\" and r._field == \"satisfaction\" and r.is_sonos == \"true\")\n  |> last()"
+      }]
+    },
+
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Total WiFi Clients (now)",
+      "description": "High client count = channel congestion = Sonos dropouts.",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{"color":"green","value":null},{"color":"yellow","value":20},{"color":"red","value":35}] }
+        }
+      },
+      "targets": [{
+        "refId": "A",
+        "query": "from(bucket: \"unifi\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"network_summary\" and r._field == \"wifi_clients\")\n  |> last()"
+      }]
+    },
+
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Sonos RSSI vs Total WiFi Clients",
+      "description": "Correlation view: watch for RSSI dips when client count spikes (guests arriving).",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 2 } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "wifi_clients" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "color", "value": { "fixedColor": "light-blue", "mode": "fixed" } },
+              { "id": "custom.fillOpacity", "value": 10 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "rssi" },
+            "properties": [
+              { "id": "unit", "value": "dBm" },
+              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } },
+              { "id": "custom.lineWidth", "value": 3 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"unifi\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"wifi_client\" and r._field == \"rssi\" and r.is_sonos == \"true\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> set(key: \"_field\", value: \"rssi\")"
+        },
+        {
+          "refId": "B",
+          "query": "from(bucket: \"unifi\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"network_summary\" and r._field == \"wifi_clients\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+        }
+      ]
+    },
+
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Sonos Signal Quality Detail (RSSI / SNR / Satisfaction)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "rssi" },    "properties": [{ "id": "unit", "value": "dBm" }] },
+          { "matcher": { "id": "byName", "options": "snr" },     "properties": [{ "id": "unit", "value": "dB" }] },
+          { "matcher": { "id": "byName", "options": "satisfaction" }, "properties": [{ "id": "unit", "value": "percent" }, { "id": "custom.axisPlacement", "value": "right" }] }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "query": "from(bucket: \"unifi\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"wifi_client\" and r.is_sonos == \"true\")\n  |> filter(fn: (r) => r._field == \"rssi\" or r._field == \"snr\" or r._field == \"satisfaction\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+        }
+      ]
+    },
+
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Kitchen AP Channel Utilisation",
+      "description": "High channel utilisation (>60%) on the AP the Sonos connects to is the most common cause of audio dropouts.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "custom": { "lineWidth": 2 }, "min": 0, "max": 100,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{"color":"green","value":null},{"color":"yellow","value":40},{"color":"red","value":70}] }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean","max"] } },
+      "targets": [{
+        "refId": "A",
+        "query": "from(bucket: \"unifi\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ap_radio\" and r._field == \"channel_utilization\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+      }]
+    },
+
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Sonos TX Rate (Mbps)",
+      "description": "Sustained low TX rate indicates poor RF conditions even when connected.",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 22 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": { "unit": "Mbits", "custom": { "lineWidth": 2 } }
+      },
+      "targets": [{
+        "refId": "A",
+        "query": "from(bucket: \"unifi\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"wifi_client\" and r._field == \"tx_rate\" and r.is_sonos == \"true\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+      }]
+    },
+
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Clients per AP (congestion heatmap)",
+      "description": "Which AP is overloaded? Each line is one AP's connected client count.",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 22 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 2 } }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean","max"] } },
+      "targets": [{
+        "refId": "A",
+        "query": "from(bucket: \"unifi\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ap_radio\" and r._field == \"num_sta\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)"
+      }]
+    },
+
+    {
+      "id": 40,
+      "type": "logs",
+      "title": "Sonos-Related Network Events (disconnects / roams)",
+      "description": "Filtered to disconnect, reconnect, and roaming events — the signature of a dropout.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 29 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "dedupStrategy": "none", "showTime": true, "sortOrder": "Descending" },
+      "targets": [{
+        "refId": "A",
+        "query": "from(bucket: \"unifi\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"network_event\" and r._field == \"message\")\n  |> filter(fn: (r) => r.event_key =~ /disconnect|roam|handover|EVT_WU/)\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 500)"
+      }]
+    }
+
+  ]
+}
